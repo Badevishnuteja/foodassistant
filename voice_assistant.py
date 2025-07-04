@@ -6,6 +6,7 @@ import google.generativeai as genai
 from gtts import gTTS
 from tempfile import NamedTemporaryFile
 import speech_recognition as sr
+import pyaudio  # ✅ Retained as requested
 import time
 
 # ======= CONFIGURE GEMINI =======
@@ -124,7 +125,7 @@ st.title("👩‍🍳 AI Voice Cooking Assistant")
 st.markdown("""
 Welcome to the Gemini-powered Cooking Assistant! 🎙  
 - Speak or type your ingredients or recipe name  
-- Get full OK full recipes with ingredients, time, and steps  
+- Get full recipes with ingredients, time, and steps  
 - Multilingual support 🌐
 """)
 
@@ -207,10 +208,10 @@ if user_input:
 st.markdown("---")
 st.markdown("""
 ### Troubleshooting:
-- Microphone issues: Ensure a microphone is connected, enabled in system settings, and permissions are granted.
-- No transcription: Speak clearly and ensure a stable internet connection (Google Speech Recognition requires internet).
-- Text-to-speech issues: Ensure the selected language is supported (English, Hindi, Tamil, French, Spanish, German, Japanese, Chinese, Arabic).
-- API issues: Verify your Gemini API key and ensure access to the 'gemini-1.5-flash' model.
-- Dependencies: Install requirements: pip install streamlit speechrecognition google-generativeai gtts pydub ffmpeg-python.
+- Microphone issues: Ensure a microphone is connected and `pyaudio` is installed (`pip install pyaudio`)
+- For Windows, install pyaudio via `pipwin install pyaudio`
+- For Linux, install `sudo apt install portaudio19-dev` before `pip install pyaudio`
+- Google Speech Recognition requires internet
+- Text-to-speech only works with supported languages (English, Hindi, Tamil, French, Spanish, German, Japanese, Chinese, Arabic)
 """)
 st.caption("Made with ❤ using Gemini + Streamlit + SpeechRecognition")
