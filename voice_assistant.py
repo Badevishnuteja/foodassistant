@@ -6,9 +6,7 @@ import google.generativeai as genai
 from gtts import gTTS
 from tempfile import NamedTemporaryFile
 import speech_recognition as sr
-import pyaudio
-import socket
-import time
+
 
 # ======= CONFIGURE GEMINI =======
 API_KEY = "AIzaSyBb5rqszdrMesMt86OJ_FhGUpn92Tz2dak"  # Replace with your Gemini API key
