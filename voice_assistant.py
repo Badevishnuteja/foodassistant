@@ -6,7 +6,7 @@ import google.generativeai as genai
 from gtts import gTTS
 from tempfile import NamedTemporaryFile
 import speech_recognition as sr
-
+import time
 
 # ======= CONFIGURE GEMINI =======
 API_KEY = "AIzaSyBb5rqszdrMesMt86OJ_FhGUpn92Tz2dak"  # Replace with your Gemini API key
@@ -22,25 +22,22 @@ SUPPORTED_LANGUAGES = {
 # ======= TEXT TO SPEECH =======
 def speak(text, lang="en"):
     try:
-        # Clean text by removing problematic characters, but preserve meaningful content
         clean_text = re.sub(r'[!@#$%^&*()_+=\[\]{}<>\\|/:;\"\'~]', '', text)
         if not clean_text.strip():
             st.error("No valid text to convert to speech. Please try again.")
             return
 
-        # Verify language support for gTTS
         supported_gtts_langs = ['en', 'hi', 'ta', 'fr', 'es', 'de', 'ja', 'zh-cn', 'ar']
         if lang not in supported_gtts_langs:
             st.warning(f"Language '{lang}' not supported by gTTS. Falling back to English.")
             lang = "en"
 
-        # Generate and play speech
         tts = gTTS(text=clean_text, lang=lang)
         with NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             tts.save(fp.name)
             st.audio(fp.name, format="audio/mp3")
-            time.sleep(1)  # Ensure file is closed before deletion
-            os.unlink(fp.name)  # Clean up temporary file
+            time.sleep(1)
+            os.unlink(fp.name)
     except Exception as e:
         st.error(f"Text-to-speech error: {e}")
 
@@ -120,11 +117,6 @@ def transcribe_speech():
     except Exception as e:
         return f"Microphone initialization failed: {e}. Ensure a microphone is connected and accessible."
 
-# ======= CHECK PORT =======
-def check_port(port=8501):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('localhost', port)) != 0
-
 # ======= STREAMLIT INTERFACE =======
 st.set_page_config(page_title="AI Cooking Assistant", layout="centered")
 st.title("👩‍🍳 AI Voice Cooking Assistant")
@@ -135,10 +127,6 @@ Welcome to the Gemini-powered Cooking Assistant! 🎙
 - Get full OK full recipes with ingredients, time, and steps  
 - Multilingual support 🌐
 """)
-
-# Warn if port is in use
-if not check_port(8501):
-    st.warning("Port 8501 is in use. Run with a different port: streamlit run voice_assistant.py --server.port 8502")
 
 # ======= LANGUAGE & MODE SELECTION =======
 lang_input = st.selectbox("Choose output language:", list(SUPPORTED_LANGUAGES.keys()), index=0)
@@ -158,7 +146,7 @@ with col1:
     if st.button("Start Recording", disabled=st.session_state.recording):
         st.session_state.recording = True
         with st.spinner("Recording..."):
-            time.sleep(1)  # Ensure microphone initializes
+            time.sleep(1)
             result = transcribe_speech()
             if result and not result.startswith(("Could not", "Speech recognition", "No speech", "Microphone")):
                 st.session_state.manual_input_text = result
@@ -189,11 +177,10 @@ if user_input:
             selected = st.selectbox("Choose a suggested recipe:", suggestions)
             if selected and st.button("🔍 Show Recipe"):
                 recipe = fetch_recipe_details(selected)
-                if recipe:  # Check if recipe is not empty
-                    # st.write(f"DEBUG: Recipe content: {recipe}")  # Uncomment for debugging
+                if recipe:
                     if lang_code != "en":
                         recipe = translate_recipe(recipe, lang_input)
-                    if recipe:  # Check again after translation
+                    if recipe:
                         st.markdown("## 🍽 Recipe")
                         st.markdown(recipe)
                         speak(recipe, lang=lang_code)
@@ -204,11 +191,10 @@ if user_input:
     else:
         if st.button("🔍 Show Recipe"):
             recipe = fetch_recipe_details(user_input)
-            if recipe:  # Check if recipe is not empty
-                # st.write(f"DEBUG: Recipe content: {recipe}")  # Uncomment for debugging
+            if recipe:
                 if lang_code != "en":
                     recipe = translate_recipe(recipe, lang_input)
-                if recipe:  # Check again after translation
+                if recipe:
                     st.markdown("## 🍽 Recipe")
                     st.markdown(recipe)
                     speak(recipe, lang=lang_code)
@@ -221,11 +207,10 @@ if user_input:
 st.markdown("---")
 st.markdown("""
 ### Troubleshooting:
-- Microphone issues: Ensure a microphone is connected, enabled in system settings, and permissions are granted. Install pyaudio: pip install pyaudio.
+- Microphone issues: Ensure a microphone is connected, enabled in system settings, and permissions are granted.
 - No transcription: Speak clearly and ensure a stable internet connection (Google Speech Recognition requires internet).
-- Text-to-speech issues: Ensure the selected language is supported (English, Hindi, Tamil, French, Spanish, German, Japanese, Chinese, Arabic). Check internet connection for gTTS.
+- Text-to-speech issues: Ensure the selected language is supported (English, Hindi, Tamil, French, Spanish, German, Japanese, Chinese, Arabic).
 - API issues: Verify your Gemini API key and ensure access to the 'gemini-1.5-flash' model.
-- Port conflict: If the app fails to load, try a different port: streamlit run voice_assistant.py --server.port 8502.
-- Dependencies: Install requirements: pip install streamlit speechrecognition pyaudio google-generativeai gtts.
+- Dependencies: Install requirements: pip install streamlit speechrecognition google-generativeai gtts pydub ffmpeg-python.
 """)
 st.caption("Made with ❤ using Gemini + Streamlit + SpeechRecognition")
