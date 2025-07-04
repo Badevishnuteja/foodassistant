@@ -1,0 +1,7 @@
+streamlit
+streamlit-mic-recorder
+google-generativeai
+gTTS
+speechrecognition
+pydub
+ffmpeg-python
