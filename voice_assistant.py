@@ -1,16 +1,18 @@
 import os
 import re
 import io
+import time
+import socket
 import streamlit as st
 import google.generativeai as genai
 from gtts import gTTS
 from tempfile import NamedTemporaryFile
+from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
-import pyaudio  # ✅ Retained as requested
-import time
+from pydub import AudioSegment
 
 # ======= CONFIGURE GEMINI =======
-API_KEY = "AIzaSyBb5rqszdrMesMt86OJ_FhGUpn92Tz2dak"  # Replace with your Gemini API key
+API_KEY = "AIzaSyBb5rqszdrMesMt86OJ_FhGUpn92Tz2dak"
 genai.configure(api_key=API_KEY)
 
 # ======= SUPPORTED LANGUAGES =======
@@ -25,14 +27,12 @@ def speak(text, lang="en"):
     try:
         clean_text = re.sub(r'[!@#$%^&*()_+=\[\]{}<>\\|/:;\"\'~]', '', text)
         if not clean_text.strip():
-            st.error("No valid text to convert to speech. Please try again.")
+            st.error("No valid text to convert to speech.")
             return
-
         supported_gtts_langs = ['en', 'hi', 'ta', 'fr', 'es', 'de', 'ja', 'zh-cn', 'ar']
         if lang not in supported_gtts_langs:
             st.warning(f"Language '{lang}' not supported by gTTS. Falling back to English.")
             lang = "en"
-
         tts = gTTS(text=clean_text, lang=lang)
         with NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             tts.save(fp.name)
@@ -40,24 +40,19 @@ def speak(text, lang="en"):
             time.sleep(1)
             os.unlink(fp.name)
     except Exception as e:
-        st.error(f"Text-to-speech error: {e}")
+        st.error(f"TTS Error: {e}")
 
-# ======= GEMINI: SUGGEST RECIPE NAMES =======
+# ======= GEMINI FUNCTIONS =======
 def suggest_recipe_names(ingredients):
     prompt = f"Suggest 3 recipe names using these ingredients: {ingredients}. Only return names, comma separated."
     model = genai.GenerativeModel("models/gemini-1.5-flash")
     try:
         response = model.generate_content(prompt)
-        if response.text.strip():
-            return [name.strip() for name in response.text.strip().split(",")]
-        else:
-            st.error("No recipe suggestions received from Gemini API.")
-            return []
+        return [name.strip() for name in response.text.strip().split(",")] if response.text else []
     except Exception as e:
         st.error(f"Suggestion Error: {e}")
         return []
 
-# ======= GEMINI: FETCH FULL RECIPE =======
 def fetch_recipe_details(recipe_name):
     prompt = f"""Give me a full recipe for '{recipe_name}' including:
 - Title
@@ -69,57 +64,42 @@ Separate each section with two newlines."""
     model = genai.GenerativeModel("models/gemini-1.5-flash")
     try:
         response = model.generate_content(prompt)
-        if response.text.strip():
-            return response.text.strip()
-        else:
-            st.error(f"No recipe details received for '{recipe_name}'.")
-            return ""
+        return response.text.strip() if response.text else ""
     except Exception as e:
         st.error(f"Fetch Error: {e}")
         return ""
 
-# ======= GEMINI: TRANSLATE =======
 def translate_recipe(text, language):
     if not text.strip():
-        st.error("No recipe text to translate.")
         return text
-    prompt = f"Translate this recipe into {language} language:\n\n{text}"
+    prompt = f"Translate this recipe into {language}:\n\n{text}"
     model = genai.GenerativeModel("models/gemini-1.5-flash")
     try:
         response = model.generate_content(prompt)
-        if response.text.strip():
-            return response.text.strip()
-        else:
-            st.warning(f"Translation to {language} failed. Showing English result.")
-            return text
+        return response.text.strip() if response.text else text
     except Exception as e:
-        st.warning(f"Translation failed: {e}. Showing English result.")
+        st.warning(f"Translation failed: {e}. Showing original.")
         return text
 
-# ======= SPEECH RECOGNITION =======
-def transcribe_speech():
-    r = sr.Recognizer()
+# ======= TRANSCRIBE RECORDED AUDIO =======
+def transcribe_audio_bytes(audio_bytes):
+    recognizer = sr.Recognizer()
     try:
-        with sr.Microphone() as source:
-            st.info("Listening... Speak clearly into the microphone.")
-            r.adjust_for_ambient_noise(source, duration=1)
-            try:
-                audio = r.listen(source, timeout=5, phrase_time_limit=10)
-                st.info("Processing audio...")
-                try:
-                    text = r.recognize_google(audio)
-                    return text
-                except sr.UnknownValueError:
-                    return "Could not understand the audio. Please speak clearly."
-                except sr.RequestError as e:
-                    return f"Speech recognition service error: {e}. Check your internet connection."
-            except sr.WaitTimeoutError:
-                return "No speech detected within 5 seconds."
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        with NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            audio.export(temp_audio.name, format="wav")
+            with sr.AudioFile(temp_audio.name) as source:
+                audio_data = recognizer.record(source)
+                return recognizer.recognize_google(audio_data)
+    except sr.UnknownValueError:
+        return "Could not understand the audio. Please try again."
+    except sr.RequestError as e:
+        return f"Speech recognition service error: {e}."
     except Exception as e:
-        return f"Microphone initialization failed: {e}. Ensure a microphone is connected and accessible."
+        return f"Audio processing error: {e}"
 
-# ======= STREAMLIT INTERFACE =======
-st.set_page_config(page_title="AI Cooking Assistant", layout="centered")
+# ======= STREAMLIT UI =======
+st.set_page_config(page_title="AI Voice Cooking Assistant", layout="centered")
 st.title("👩‍🍳 AI Voice Cooking Assistant")
 
 st.markdown("""
@@ -129,46 +109,28 @@ Welcome to the Gemini-powered Cooking Assistant! 🎙
 - Multilingual support 🌐
 """)
 
-# ======= LANGUAGE & MODE SELECTION =======
-lang_input = st.selectbox("Choose output language:", list(SUPPORTED_LANGUAGES.keys()), index=0)
+lang_input = st.selectbox("Choose output language:", list(SUPPORTED_LANGUAGES.keys()))
 lang_code = SUPPORTED_LANGUAGES[lang_input.lower()]
 mode = st.radio("Input Type", ["Ingredients", "Recipe Name"], horizontal=True)
 
-# ======= SESSION STATE FOR RECORDING =======
-if 'recording' not in st.session_state:
-    st.session_state.recording = False
-if "manual_input_text" not in st.session_state:
-    st.session_state.manual_input_text = ""
+# ======= RECORD BUTTON =======
+st.markdown("🎤 Click below to record audio input:")
+audio = mic_recorder(start_prompt="Start recording", stop_prompt="Stop recording", key="recorder")
 
-# ======= AUDIO INPUT AND TRANSCRIPTION =======
-st.markdown("🎤 Mic Input (transcribes into manual text box)")
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("Start Recording", disabled=st.session_state.recording):
-        st.session_state.recording = True
-        with st.spinner("Recording..."):
-            time.sleep(1)
-            result = transcribe_speech()
-            if result and not result.startswith(("Could not", "Speech recognition", "No speech", "Microphone")):
-                st.session_state.manual_input_text = result
-                st.success(f"✅ Transcribed: {result}")
-            else:
-                st.error(result)
-            st.session_state.recording = False
+if audio and audio["bytes"]:
+    transcription = transcribe_audio_bytes(audio["bytes"])
+    if transcription:
+        st.session_state.manual_input_text = transcription
+        st.success(f"📝 Transcribed: {transcription}")
 
-with col2:
-    if st.button("Stop Recording", disabled=not st.session_state.recording):
-        st.session_state.recording = False
-        st.info("Recording stopped.")
-
-# ======= MANUAL INPUT BOX =======
+# ======= MANUAL TEXT AREA =======
 manual_input = st.text_area(
     "📝 Type or speak ingredients/recipe name",
-    value=st.session_state.manual_input_text,
+    value=st.session_state.get("manual_input_text", ""),
     key="manual_input_box"
 )
 
-# ======= PROCESS USER INPUT =======
+# ======= MAIN LOGIC =======
 user_input = manual_input.strip()
 
 if user_input:
@@ -178,40 +140,27 @@ if user_input:
             selected = st.selectbox("Choose a suggested recipe:", suggestions)
             if selected and st.button("🔍 Show Recipe"):
                 recipe = fetch_recipe_details(selected)
-                if recipe:
-                    if lang_code != "en":
-                        recipe = translate_recipe(recipe, lang_input)
-                    if recipe:
-                        st.markdown("## 🍽 Recipe")
-                        st.markdown(recipe)
-                        speak(recipe, lang=lang_code)
-                    else:
-                        st.error("No translated recipe available to display or speak.")
-                else:
-                    st.error("No recipe details available to display or speak.")
+                if lang_code != "en":
+                    recipe = translate_recipe(recipe, lang_input)
+                st.markdown("## 🍽 Recipe")
+                st.markdown(recipe)
+                speak(recipe, lang=lang_code)
     else:
         if st.button("🔍 Show Recipe"):
             recipe = fetch_recipe_details(user_input)
-            if recipe:
-                if lang_code != "en":
-                    recipe = translate_recipe(recipe, lang_input)
-                if recipe:
-                    st.markdown("## 🍽 Recipe")
-                    st.markdown(recipe)
-                    speak(recipe, lang=lang_code)
-                else:
-                    st.error("No translated recipe available to display or speak.")
-            else:
-                st.error("No recipe details available to display or speak.")
+            if lang_code != "en":
+                recipe = translate_recipe(recipe, lang_input)
+            st.markdown("## 🍽 Recipe")
+            st.markdown(recipe)
+            speak(recipe, lang=lang_code)
 
 # ======= TROUBLESHOOTING =======
 st.markdown("---")
 st.markdown("""
 ### Troubleshooting:
-- Microphone issues: Ensure a microphone is connected and `pyaudio` is installed (`pip install pyaudio`)
-- For Windows, install pyaudio via `pipwin install pyaudio`
-- For Linux, install `sudo apt install portaudio19-dev` before `pip install pyaudio`
-- Google Speech Recognition requires internet
-- Text-to-speech only works with supported languages (English, Hindi, Tamil, French, Spanish, German, Japanese, Chinese, Arabic)
+- 🎤 Use Chrome or Firefox for microphone access.
+- 📡 Make sure you're connected to the internet.
+- 💬 Speak clearly and avoid background noise.
+- ⚠️ Languages: Only supports en, hi, ta, fr, es, de, ja, zh-cn, ar for text-to-speech.
 """)
 st.caption("Made with ❤ using Gemini + Streamlit + SpeechRecognition")
