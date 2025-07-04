@@ -5,5 +5,4 @@ gTTS
 speechrecognition
 pydub
 ffmpeg-python
-socket
 time
